@@ -25,5 +25,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     // LAME MP3 encoder wrapper (JNI)
-    implementation("com.github.naman14:TAndroidLame:1.1")
+    // The library drags in the old com.android.support libs, which duplicate AndroidX classes.
+    implementation("com.github.naman14:TAndroidLame:1.1") {
+        exclude(group = "com.android.support")
+    }
 }

@@ -6,13 +6,13 @@
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
 
     <!-- tools:replace: the TAndroidLame library declares its own label/icon/backup flag,
-         so our values must override them or the manifest merger fails. -->
+         so our label/backup values must override them or the manifest merger fails. -->
     <application
         android:label="AudioLab"
         android:icon="@android:drawable/ic_btn_speak_now"
         android:allowBackup="true"
         android:theme="@style/Theme.AppCompat.DayNight.DarkActionBar"
-        tools:replace="android:label,android:icon,android:allowBackup">
+        tools:replace="android:label,android:allowBackup">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

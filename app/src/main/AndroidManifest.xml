@@ -1,13 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
 
+    <!-- tools:replace: the TAndroidLame library declares its own label/icon/backup flag,
+         so our values must override them or the manifest merger fails. -->
     <application
         android:label="AudioLab"
+        android:icon="@android:drawable/ic_btn_speak_now"
         android:allowBackup="true"
-        android:theme="@style/Theme.AppCompat.DayNight.DarkActionBar">
+        android:theme="@style/Theme.AppCompat.DayNight.DarkActionBar"
+        tools:replace="android:label,android:icon,android:allowBackup">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

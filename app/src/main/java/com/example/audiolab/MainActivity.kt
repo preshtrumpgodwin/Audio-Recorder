@@ -17,6 +17,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recorder: Mp3Recorder
     private var inputs: List<AudioDeviceInfo> = emptyList()
     private lateinit var spinner: Spinner
+    private lateinit var outSpinner: Spinner
+    private var outputs: List<AudioDeviceInfo> = emptyList()
     private lateinit var recordBtn: Button
     private lateinit var status: TextView
     private lateinit var meter: ProgressBar
@@ -46,6 +48,14 @@ class MainActivity : AppCompatActivity() {
         val usb = inputs.indexOfFirst {
             it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET }
         if (usb >= 0) spinner.setSelection(usb)
+
+        outputs = recorder.listOutputs()
+        outSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item,
+            outputs.map { recorder.describe(it) })
+        val outUsb = outputs.indexOfFirst {
+            it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+            it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES }
+        if (outUsb >= 0) outSpinner.setSelection(outUsb)
     }
 
     private fun toggleRecording() {
@@ -57,7 +67,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) { ensurePermission(); return }
-            recorder.start(inputs.getOrNull(spinner.selectedItemPosition)) { }
+            recorder.start(inputs.getOrNull(spinner.selectedItemPosition),
+                outputs.getOrNull(outSpinner.selectedItemPosition)) { }
             recordBtn.text = "■ Stop"; status.text = "Recording…"
         }
     }
@@ -79,6 +90,15 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(label("Input source (plug in USB audio interface / mic, then refresh)"))
         spinner = Spinner(this); root.addView(spinner)
+        root.addView(label("Monitor output (earpiece / headphones)"))
+        outSpinner = Spinner(this); root.addView(outSpinner)
+        root.addView(Switch(this).apply {
+            text = "Live monitor (use headphones!)"
+            setOnCheckedChangeListener { _, c -> recorder.monitorEnabled = c }
+        })
+        val volLabel = TextView(this).apply { text = "Monitor volume: 80%" }
+        root.addView(volLabel)
+        root.addView(slider(0, 100, 80) { v -> volLabel.text = "Monitor volume: $v%"; recorder.monitorVolume = v / 100f })
         root.addView(Button(this).apply { text = "Refresh inputs"; setOnClickListener { refreshInputs() } })
 
         meter = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100 }

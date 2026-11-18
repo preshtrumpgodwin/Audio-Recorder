@@ -27,6 +27,22 @@ class Mp3Recorder(private val context: Context) {
 
     private var thread: Thread? = null
 
+    /** Live monitoring: play the processed signal back while recording. Can be toggled mid-recording. */
+    @Volatile var monitorEnabled = false
+    @Volatile var monitorVolume = 0.8f            // 0..1
+    @Volatile var outputDevice: AudioDeviceInfo? = null   // chosen at start()
+
+    /** Headphone-capable outputs: the iRig's earpiece jack shows up as USB or wired headset. */
+    fun listOutputs(): List<AudioDeviceInfo> {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        return am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).filter {
+            it.type in setOf(
+                AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET,
+                AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+        }
+    }
+
     /** Lists external inputs (USB interface, wired headset, Bluetooth) plus the built-in mic. */
     fun listInputs(): List<AudioDeviceInfo> {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -44,8 +60,9 @@ class Mp3Recorder(private val context: Context) {
         return "$type – ${d.productName}"
     }
 
-    fun start(device: AudioDeviceInfo?, onSaved: (Uri?) -> Unit) {
+    fun start(device: AudioDeviceInfo?, output: AudioDeviceInfo? = null, onSaved: (Uri?) -> Unit) {
         if (isRecording) return
+        outputDevice = output
         isRecording = true
         thread = Thread({ record(device, onSaved) }, "mp3-recorder").also { it.start() }
     }
@@ -67,6 +84,26 @@ class Mp3Recorder(private val context: Context) {
             .setBufferSizeInBytes(bufSize * 2)
             .build()
         if (device != null) recorder.setPreferredDevice(device)
+
+        // Low-latency playback track for monitoring (written from the same loop as the encoder)
+        val trackBuf = maxOf(
+            AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT),
+            2048)
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            .setAudioFormat(AudioFormat.Builder()
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setSampleRate(SAMPLE_RATE)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .setBufferSizeInBytes(trackBuf)
+            .build()
+        outputDevice?.let { track.setPreferredDevice(it) }
+        var trackPlaying = false
+        val monitorBuf = ShortArray(bufSize / 2)
 
         val lame: AndroidLame = LameBuilder()
             .setInSampleRate(SAMPLE_RATE)
@@ -108,11 +145,23 @@ class Mp3Recorder(private val context: Context) {
                 peakLevel = peak
                 val bytes = lame.encode(pcm, pcm, n, mp3buf)
                 if (bytes > 0) out?.write(mp3buf, 0, bytes)
+
+                // Monitoring: send the same processed audio to the headphones.
+                if (monitorEnabled) {
+                    if (!trackPlaying) { track.play(); trackPlaying = true }
+                    val v = monitorVolume
+                    for (i in 0 until n) monitorBuf[i] = (pcm[i] * v).toInt().toShort()
+                    // Non-blocking write so a slow output can never stall the recording
+                    track.write(monitorBuf, 0, n, AudioTrack.WRITE_NON_BLOCKING)
+                } else if (trackPlaying) {
+                    track.pause(); track.flush(); trackPlaying = false
+                }
             }
             val tail = lame.flush(mp3buf)
             if (tail > 0) out?.write(mp3buf, 0, tail)
         } finally {
             recorder.stop(); recorder.release(); lame.close(); out?.close()
+            track.stop(); track.release()
             peakLevel = 0f
             if (uri != null) {
                 values.clear()
